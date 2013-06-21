@@ -8,10 +8,10 @@
 using namespace boost;
 using namespace Eigen;
 
-size_t h_pitch_data, width, h_miniBatch;
-unsigned len, nvisible, nhidden, nInst;
-int *h_data;
-weight_t *h_weight, *h_a, *h_b;
+size_t h_pitch_data, h_pitch_data_hid, width, width_hid;
+unsigned len, len_hid, nvisible, nhidden, ninst, h_miniBatch;
+int *h_data, *h_data_hid;
+float *h_weight, *h_a, *h_b;
 int nbits = sizeof(int) * 8;
 
 void initData(){
@@ -20,19 +20,25 @@ void initData(){
   h_pitch_data = len * sizeof(int);
   width = len * sizeof(int);
 
-  h_data = (int *)malloc(len * nInst * sizeof(int));
+  h_data = (int *)malloc(len * ninst * sizeof(int));
   unsigned i = 0;
-  while(i < len * nInst)
+  while(i < len * ninst)
     h_data[i++] = rand();
+
+  len_hid = (nhidden - 1)/nbits + 1;
+  h_pitch_data_hid = len_hid * sizeof(int);
+  width_hid = len_hid * sizeof(int);
+
+  h_data_hid = (int *)malloc(len_hid * ninst * sizeof(int));
 }
 
 void initWeight(){
   // Initialize weights by random numbers of a normal distribution (0, 0.01)
   mt19937 rng;
-  normal_distribution<weight_t> nd(0.0, .01);
-  variate_generator<mt19937&, normal_distribution<weight_t> > var_nor(rng, nd);
+  normal_distribution<float> nd(0.0, .01);
+  variate_generator<mt19937&, normal_distribution<float> > var_nor(rng, nd);
 
-  h_weight = (weight_t *)malloc(nvisible * nhidden * sizeof(weight_t));
+  h_weight = (float *)malloc(nvisible * nhidden * sizeof(float));
   unsigned i = 0;
   while(i < nvisible * nhidden)
     h_weight[i++] = var_nor();
@@ -40,17 +46,17 @@ void initWeight(){
 
 void initVisBias(){
   // Initialize bias for visible units
-  h_a = (weight_t *)malloc(nvisible * sizeof(weight_t));
+  h_a = (float *)malloc(nvisible * sizeof(float));
   unsigned *on_count = (unsigned *)malloc(nvisible * sizeof(unsigned));
   memset(on_count, 0, nvisible * sizeof(unsigned));
-  for(int i = 0; i < nInst; ++ i){
+  for(int i = 0; i < ninst; ++ i){
     for(int j = 0; j < nvisible; ++j){
       if(h_data[j/nbits] & (1<<(nbits-1-j%nbits)))
         ++ on_count[j];
     }
   }
   for(int i = 0; i < nvisible; ++ i){
-    double p = 1.0 * on_count[i] / nInst;
+    double p = 1.0 * on_count[i] / ninst;
     h_a[i] = log(p) - log(1-p);
   }
   free(on_count);
@@ -58,13 +64,13 @@ void initVisBias(){
 
 void initHidBias(){
   // Initialize bias for hidden units
-  h_b = (weight_t *)malloc(nhidden * sizeof(weight_t));
+  h_b = (float *)malloc(nhidden * sizeof(float));
   for(int i = 0; i < nhidden; ++ i)
     h_b[i] = -4;
 }
 
 void arrayToMatrix(MatrixXf &m_data){
-  for(unsigned i = 0; i < nInst; ++i)
+  for(unsigned i = 0; i < ninst; ++i)
     for(unsigned j = 0; j < nvisible; ++j){
 	  int compressed = *(h_data + i*len + j/nbits);
 	  unsigned mask = 1 << (nbits - 1 - j%nbits);
@@ -75,6 +81,18 @@ void arrayToMatrix(MatrixXf &m_data){
 	}
 }
 
+void arrayToMatrix(float *m_data){
+  for(unsigned i = 0; i < ninst; ++i)
+    for(unsigned j = 0; j < nvisible; ++j){
+	  int compressed = *(h_data + i*len + j/nbits);
+	  unsigned mask = 1 << (nbits - 1 - j%nbits);
+	  if(compressed & mask)
+	    *(m_data + i * nvisible + j) = 1;
+	  else
+	    *(m_data + i * nvisible + j) = 0;
+	}
+}
+
 void printArray(float *array, unsigned height, unsigned width){
   cout << endl;
   for(unsigned i = 0; i < height; ++ i){
@@ -82,44 +100,44 @@ void printArray(float *array, unsigned height, unsigned width){
       cout << *(array + i * width + j) << " ";
     cout << endl;
   }
+  cout << endl;
 }
 
 void rbm(){
-  MatrixXf m_data(nInst, nvisible);
+  MatrixXf m_data(ninst, nvisible);
   arrayToMatrix(m_data);
-  Map<MatrixXf> m_weight(h_weight, nvisible, nhidden);
+  Map<MatrixXf> m_weight(h_weight, nhidden, nvisible);
   Map<VectorXf> m_a(h_a, nvisible);
   Map<VectorXf> m_b(h_b, nhidden);
-  cout << "data * weight" << endl;
-  cout << m_data << endl;
-  cout << m_weight << endl;
-  cout << endl << "result:" << endl;
-  MatrixXf result = m_data*m_weight;
-  result.rowwise() += m_b.transpose();
-  cout << result << endl;
-  /*
-  int array[8];
-  for(int i = 0; i < 8; ++i) array[i] = i;
-  Map<Matrix<int,2,4,RowMajor> > m_aa(array);
-  MatrixXi m = MatrixXi::Random(3,3);
-  cout << m << endl;
-  */
-  printArray(h_weight, nhidden, nvisible);
+  //cout << "data * weight" << endl;
+  //cout << m_data << endl;
+  //cout << m_weight << endl;
+
+  clock_t tStart = clock();
+  MatrixXf result = m_data*m_weight.transpose();
+  cout << "result:" << result(0,0) << " " << result (0,1) << " " << result(1, 0);
+  printf("\tEigen: %.2fms\n", (double)(clock() - tStart)/(CLOCKS_PER_SEC/1000));
+  //result.rowwise() += m_b.transpose();
+  //cout << result << endl;
+  //printArray(h_weight, nhidden, nvisible);
 }
 
 int main(int argc, char **argv){
-  h_miniBatch = 2;
-  nvisible = 6;
-  nhidden = 4;
-  nInst = 3;
+  h_miniBatch = atoi(argv[1]);
+  ninst = atoi(argv[1]);
+  nvisible = atoi(argv[2]);
+  nhidden = atoi(argv[2]);
 
+  clock_t tStart = clock();
+  cout << "Generating data ..." << endl;
   initData();
   initWeight();
   initVisBias();
   initHidBias();
+  printf("\t %.2fs\n", (double)(clock() - tStart)/CLOCKS_PER_SEC);
   
-  deviceInit();
+  rbm();
+  cublasRunRBM();
   runRBM();
-  rbm();	
 }
 

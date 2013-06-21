@@ -1,79 +1,128 @@
 #include "cuRBM.h"
+#define DEVMAIN
 
-__constant__ unsigned nVis;
-__constant__ unsigned nHid;
-__constant__ unsigned batch;
-__constant__ unsigned miniBatch;
-__constant__ int *data;
-__constant__ weight_t *weight;
-__constant__ weight_t *a;
-__constant__ weight_t *b;
-__constant__ size_t pitch_data;
-__constant__ size_t pitch_weight;
+__constant__ int *data, *data_hid;
+__constant__ float *data_vis_float, *data_hid_float;
+__constant__ unsigned nVis, nHid, nCase, miniBatch, lenVis, lenHid;
+__constant__ float *weight, *a, *b;
+__constant__ size_t pitch_data, pitch_data_hid, pitch_weight;
 
-int *d_data;
-weight_t *d_weight, *d_a, *d_b;
-size_t d_pitch_weight, d_pitch_data;
-/*
-void HANDLE_ERROR(cudaError_t error){
-  if(error != cudaSuccess){
-	cout << "CUDA error: " << cudaGetErrorString(error) << endl;
-	exit(-1);
-   }
+__device__ float getData(float* base, int row, int col, size_t pitch){
+  return *((float *)((char*)base + row * pitch) + col);
 }
-*/
-#define HANDLE_ERROR( err ) (HandleError( err, __FILE__, __LINE__ ))
 
-static void HandleError( cudaError_t err,
-                         const char *file,
-                         int line ) {
-    if (err != cudaSuccess) {
-        printf( "%s in %s at line %d\n", cudaGetErrorString( err ),
-                file, line );
-        exit( EXIT_FAILURE );
+__device__ int getData(int* base, int row, int col, size_t pitch){
+  return *((int *)((char*)base + row * pitch) + col);
+}
+
+__device__ void setData(float* base, int row, int col, size_t pitch, float v){
+  *((float *)((char*)base + row * pitch) + col) = v;
+}
+
+
+__global__ void kernel1(){
+  __shared__ int ds[32][8];
+  __shared__ float ws[256];
+  __shared__ float sum[256];
+  __shared__ float result[32];
+
+  int tid = threadIdx.x, stride;
+  int nActive = miniBatch - blockIdx.x * 32 > 32?32:miniBatch - blockIdx.x * 32;
+
+  int nIter = 0;
+  // data prefetching
+  /*
+  int d;
+  float w;
+  if(nIter * 256 + tid < nVis)
+    w = getData(weight, nIter * 256 + tid, blockIdx.y, pitch_weight);
+  if(nIter * 8 + tid % 8 < lenVis && blockIdx.x * 32 + tid/8 < miniBatch)
+    d = getData(data, blockIdx.x * 32 + tid/8, nIter * 8 + tid % 8, pitch_data);
+  */
+  // initialize result
+  if(tid < 32)
+    result[tid] = .0;
+
+
+  for(; nIter < (nVis - 1)/256 + 1; ++ nIter){
+    // copy data from register to shared memory
+    if(nIter * 256 + tid < nVis)
+      //ws[tid] = w;
+      ws[tid] = getData(weight, nIter * 256 + tid, blockIdx.y, pitch_weight);
+    else
+      ws[tid] = .0;
+    if(nIter * 8 + tid % 8 < lenVis && blockIdx.x * 32 + tid/8 < miniBatch)
+      //ds[tid/8][tid%8] = d;
+      ds[tid/8][tid%8] = getData(data, blockIdx.x * 32 + tid/8, nIter * 8 + tid % 8, pitch_data);
+    else
+      ds[tid/8][tid%8] = .0;
+
+    __syncthreads();
+    // prefetch next element
+    /*
+    if((nIter + 1) * 256 + tid < nVis)
+      w = getData(weight, (nIter + 1) * 256 + tid, blockIdx.y, pitch_weight);
+    if((nIter + 1) * 8 + tid % 8 < lenVis && blockIdx.x * 32 + tid/8 < miniBatch)
+      d = getData(data, blockIdx.x * 32 + tid / 8, (nIter + 1) * 8 + tid % 8, pitch_data);
+    */
+    for(int i = 0; i < nActive; ++i){
+      sum[tid] = .0;
+      if(nIter * 256 + tid < nVis && (ds[i][tid/32] & (1<<(31-tid%32))))
+        sum[tid] = ws[tid];
+      stride = 128;
+      while(stride > 0){
+	__syncthreads();
+        if(tid<stride)
+	  sum[tid] += sum[tid + stride];
+        stride /= 2;
+      }
+      __syncthreads();
+      if(tid==0)
+        result[i] += sum[0];
     }
+  }
+
+  __syncthreads();
+  if(tid < nActive)
+    setData(data_hid_float, 32 * blockIdx.x + tid, blockIdx.y, nHid * sizeof(float) , result[tid]);
 }
 
-
-void batchTransfer(unsigned start, unsigned nCase){
-  // Copy data to device coalesced
-  int *data = h_data + len * start;
-  HANDLE_ERROR(cudaMemcpy2D(d_data, d_pitch_data, data, h_pitch_data, width, nCase, cudaMemcpyHostToDevice));
-}
+void deviceInit();
+void batchTransfer(unsigned start, unsigned batch_size);
 
 void runRBM(){
-  for(unsigned i = 0; i < nInst; i += h_miniBatch){
-    unsigned currentBatch = h_miniBatch > (nInst - i)? (nInst - i): h_miniBatch;
+        cudaEvent_t start, stop;
+        HANDLE_ERROR(cudaEventCreate(&start));
+        HANDLE_ERROR(cudaEventCreate(&stop));
+        HANDLE_ERROR(cudaEventRecord(start, NULL));
+	
+  deviceInit();
+  for(unsigned i = 0; i < ninst; i += h_miniBatch){
+    unsigned currentBatch = h_miniBatch > (ninst - i)? (ninst - i): h_miniBatch;
     batchTransfer(i, currentBatch);
+    dim3 grid((ninst - 1)/32 + 1, nhidden);
+    kernel1<<<grid, 256>>>();
+    cudaThreadSynchronize();
+    cudaError_t ret = cudaGetLastError();
+    HANDLE_ERROR(ret);
+    float *h_data_hid_float = (float *)malloc(ninst * nhidden * sizeof(float));
+    HANDLE_ERROR(cudaMemcpy(h_data_hid_float, d_data_hid_float, h_miniBatch * nhidden * sizeof(float), cudaMemcpyDeviceToHost));
+    cout << "result:"  << h_data_hid_float[0] << " " << h_data_hid_float[1] << " " << h_data_hid_float[nhidden];
+    //printArray(h_data_hid_float, h_miniBatch, nhidden);
+    free(h_data_hid_float);
     /*
-    unsigned *d = (unsigned *)malloc(len * nInst * sizeof(unsigned));
+    unsigned *d = (unsigned *)malloc(len * ninst * sizeof(unsigned));
     HANDLE_ERROR(cudaMemcpy2D(d, h_pitch_data, d_data, d_pitch_data, 
                                 width, currentBatch, cudaMemcpyDeviceToHost));
     cout << *(h_data + i * len) << endl;
     cout << d[0] << endl;
     */
   }
+
+        HANDLE_ERROR(cudaEventRecord(stop, NULL));
+        HANDLE_ERROR(cudaEventSynchronize(stop));
+        float msecTotal = 0.0f;
+        HANDLE_ERROR(cudaEventElapsedTime(&msecTotal, start, stop));
+	printf("\tcuRMB: %.2f msec\n", msecTotal);
 }
 
-void deviceInit(){
-  // basic parameters to constant memory
-  HANDLE_ERROR(cudaMemcpyToSymbol(miniBatch, &h_miniBatch, sizeof(unsigned), 0, cudaMemcpyHostToDevice));
-  HANDLE_ERROR(cudaMemcpyToSymbol(nVis, &nvisible, sizeof(unsigned), 0, cudaMemcpyHostToDevice));
-  HANDLE_ERROR(cudaMemcpyToSymbol(nHid, &nhidden, sizeof(unsigned), 0, cudaMemcpyHostToDevice));
-
-  // allocate global memory for data of mini batch 
-  HANDLE_ERROR(cudaMallocPitch((void **)&d_data, &d_pitch_data, len * sizeof(int), h_miniBatch));
-  HANDLE_ERROR(cudaMemcpyToSymbol(data, &d_data, sizeof(int *), 0, cudaMemcpyHostToDevice));
-  HANDLE_ERROR(cudaMemcpyToSymbol(pitch_data, &d_pitch_data, sizeof(size_t), 0, cudaMemcpyHostToDevice));
-
-  // weights to global memory
-  HANDLE_ERROR(cudaMallocPitch((void **)&d_weight, &d_pitch_weight, nhidden * sizeof(weight_t), nvisible));
-  HANDLE_ERROR(cudaMemcpyToSymbol(weight, &d_weight, sizeof(weight_t *), 0, cudaMemcpyHostToDevice));
-  HANDLE_ERROR(cudaMemcpyToSymbol(pitch_weight, &d_pitch_weight, sizeof(size_t), 0, cudaMemcpyHostToDevice));
-  
-  // bias to global memory
-  HANDLE_ERROR(cudaMalloc((void **)&d_a, nvisible * sizeof(weight_t)));
-  HANDLE_ERROR(cudaMemcpyToSymbol(a, &d_a, sizeof(weight_t *), 0, cudaMemcpyHostToDevice));
-  HANDLE_ERROR(cudaMalloc((void **)&d_b, nhidden * sizeof(weight_t)));
-  HANDLE_ERROR(cudaMemcpyToSymbol(b, &d_b, sizeof(weight_t *), 0, cudaMemcpyHostToDevice));
-}
