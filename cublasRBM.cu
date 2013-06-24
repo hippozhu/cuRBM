@@ -5,14 +5,15 @@ extern float *d_weight, *d_a, *d_b;
 
 void cublasRunRBM(){
   // data
-  float *m_data = (float *)malloc(sizeof(float)*ninst*nvisible);
-  arrayToMatrix(m_data);
-  
+        float msecTotal = 0.0f;
         cudaEvent_t start, stop;
         HANDLE_ERROR(cudaEventCreate(&start));
         HANDLE_ERROR(cudaEventCreate(&stop));
         HANDLE_ERROR(cudaEventRecord(start, NULL));
 	
+  float *m_data = (float *)malloc(sizeof(float)*ninst*nvisible);
+  arrayToMatrix(m_data);
+  
   float *d_data_a, *d_data_c;
   // allocate mini batch on device
   HANDLE_ERROR(cudaMalloc((void **)&d_data_a, h_miniBatch * nvisible * sizeof(float)));
@@ -56,14 +57,14 @@ void cublasRunRBM(){
 
         HANDLE_ERROR(cudaEventRecord(stop, NULL));
         HANDLE_ERROR(cudaEventSynchronize(stop));
-        float msecTotal = 0.0f;
         HANDLE_ERROR(cudaEventElapsedTime(&msecTotal, start, stop));
 	printf("\tcublas: %.2f msec\n", msecTotal);
 
   HANDLE_ERROR(cudaFree(d_data_a));
   HANDLE_ERROR(cudaFree(d_data_c));
-  HANDLE_ERROR(cudaFree(d_a));
-  HANDLE_ERROR(cudaFree(d_b));
+  HANDLE_ERROR(cudaFree(d_weight));
+  //HANDLE_ERROR(cudaFree(d_a));
+  //HANDLE_ERROR(cudaFree(d_b));
   free(h_data_c);
   free(m_data);
 }

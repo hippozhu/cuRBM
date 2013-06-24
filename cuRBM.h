@@ -3,8 +3,6 @@
 #include <stdio.h>
 #include <time.h>
 
-//#include <helper_string.h>  // helper for shared functions common to CUDA SDK samples
-
 // CUDA runtime
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
@@ -28,13 +26,18 @@ extern void cublasRunRBM();
 extern void arrayToMatrix(float *);
 extern void printArray(float *array, unsigned height, unsigned width);
 
-#ifndef DEVMAIN
 extern __constant__ int *data, *data_hid;
 extern __constant__ float *data_vis_float, *data_hid_float;
 extern __constant__ unsigned nVis, nHid, nCase, miniBatch, lenVis, lenHid;
 extern __constant__ float *weight, *a, *b;
 extern __constant__ size_t pitch_data, pitch_data_hid, pitch_weight;
-#endif
+extern __device__ float getData(float* base, int row, int col, size_t pitch);
+extern __device__ int getData(int* base, int row, int col, size_t pitch);
+extern __device__ void setData(float* base, int row, int col, size_t pitch, float v);
+extern __global__ void kernel2();
+
+extern void deviceInit();
+extern void batchTransfer(unsigned start, unsigned batch_size);
 
 #define CUBLAS_HANDLE_ERROR( err ) (CublasHandleError( err, __FILE__, __LINE__ ))
 static void CublasHandleError( cublasStatus_t err,

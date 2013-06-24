@@ -1,5 +1,4 @@
 #include "cuRBM.h"
-#define DEVMAIN
 
 __constant__ int *data, *data_hid;
 __constant__ float *data_vis_float, *data_hid_float;
@@ -18,7 +17,6 @@ __device__ int getData(int* base, int row, int col, size_t pitch){
 __device__ void setData(float* base, int row, int col, size_t pitch, float v){
   *((float *)((char*)base + row * pitch) + col) = v;
 }
-
 
 __global__ void kernel1(){
   __shared__ int ds[32][8];
@@ -85,44 +83,5 @@ __global__ void kernel1(){
   __syncthreads();
   if(tid < nActive)
     setData(data_hid_float, 32 * blockIdx.x + tid, blockIdx.y, nHid * sizeof(float) , result[tid]);
-}
-
-void deviceInit();
-void batchTransfer(unsigned start, unsigned batch_size);
-
-void runRBM(){
-        cudaEvent_t start, stop;
-        HANDLE_ERROR(cudaEventCreate(&start));
-        HANDLE_ERROR(cudaEventCreate(&stop));
-        HANDLE_ERROR(cudaEventRecord(start, NULL));
-	
-  deviceInit();
-  for(unsigned i = 0; i < ninst; i += h_miniBatch){
-    unsigned currentBatch = h_miniBatch > (ninst - i)? (ninst - i): h_miniBatch;
-    batchTransfer(i, currentBatch);
-    dim3 grid((ninst - 1)/32 + 1, nhidden);
-    kernel1<<<grid, 256>>>();
-    cudaThreadSynchronize();
-    cudaError_t ret = cudaGetLastError();
-    HANDLE_ERROR(ret);
-    float *h_data_hid_float = (float *)malloc(ninst * nhidden * sizeof(float));
-    HANDLE_ERROR(cudaMemcpy(h_data_hid_float, d_data_hid_float, h_miniBatch * nhidden * sizeof(float), cudaMemcpyDeviceToHost));
-    cout << "result:"  << h_data_hid_float[0] << " " << h_data_hid_float[1] << " " << h_data_hid_float[nhidden];
-    //printArray(h_data_hid_float, h_miniBatch, nhidden);
-    free(h_data_hid_float);
-    /*
-    unsigned *d = (unsigned *)malloc(len * ninst * sizeof(unsigned));
-    HANDLE_ERROR(cudaMemcpy2D(d, h_pitch_data, d_data, d_pitch_data, 
-                                width, currentBatch, cudaMemcpyDeviceToHost));
-    cout << *(h_data + i * len) << endl;
-    cout << d[0] << endl;
-    */
-  }
-
-        HANDLE_ERROR(cudaEventRecord(stop, NULL));
-        HANDLE_ERROR(cudaEventSynchronize(stop));
-        float msecTotal = 0.0f;
-        HANDLE_ERROR(cudaEventElapsedTime(&msecTotal, start, stop));
-	printf("\tcuRMB: %.2f msec\n", msecTotal);
 }
 

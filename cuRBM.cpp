@@ -42,6 +42,7 @@ void initWeight(){
   unsigned i = 0;
   while(i < nvisible * nhidden)
     h_weight[i++] = var_nor();
+    //h_weight[i++] = 1;
 }
 
 void initVisBias(){
@@ -109,10 +110,11 @@ void rbm(){
   Map<MatrixXf> m_weight(h_weight, nhidden, nvisible);
   Map<VectorXf> m_a(h_a, nvisible);
   Map<VectorXf> m_b(h_b, nhidden);
-  //cout << "data * weight" << endl;
-  //cout << m_data << endl;
-  //cout << m_weight << endl;
-
+  /*
+  cout << "data * weight" << endl;
+  cout << m_data << endl;
+  cout << m_weight.transpose() << endl;
+  */
   clock_t tStart = clock();
   MatrixXf result = m_data*m_weight.transpose();
   cout << "result:" << result(0,0) << " " << result (0,1) << " " << result(1, 0);
@@ -137,7 +139,7 @@ int main(int argc, char **argv){
   printf("\t %.2fs\n", (double)(clock() - tStart)/CLOCKS_PER_SEC);
   
   rbm();
-  cublasRunRBM();
   runRBM();
+  //cublasRunRBM();
 }
 
