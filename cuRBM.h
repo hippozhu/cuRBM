@@ -6,6 +6,7 @@
 // CUDA runtime
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
+#include <curand.h>
 
 using namespace std;
 
@@ -34,6 +35,7 @@ extern __constant__ size_t pitch_data, pitch_data_hid, pitch_weight;
 extern __device__ float getData(float* base, int row, int col, size_t pitch);
 extern __device__ int getData(int* base, int row, int col, size_t pitch);
 extern __device__ void setData(float* base, int row, int col, size_t pitch, float v);
+extern __global__ void kernel1();
 extern __global__ void kernel2();
 
 extern void deviceInit();
@@ -59,3 +61,18 @@ static void HandleError( cudaError_t err,
         exit( EXIT_FAILURE );
     }
 }
+
+/*
+#define CURAND_CALL(x) do { if((x)!=CURAND_STATUS_SUCCESS) { \
+    printf("Error at %s:%d\n",__FILE__,__LINE__);\
+    return EXIT_FAILURE;}} while(0)
+*/
+#define CURAND_HANDLE_ERROR( err ) (CurandHandleError( err, __FILE__, __LINE__ ))
+static void CurandHandleError(curandStatus_t err, const char *file, int line){
+  if(err != CURAND_STATUS_SUCCESS) { 
+        printf( "error in %s at line %d\n",
+                file, line );
+        exit( EXIT_FAILURE );
+  }
+}
+

@@ -1,7 +1,7 @@
 all: cuRBM
 
 cuRBM: main.o cublasRBM.o cudaMem.o kernels.o kernel1.o kernel2.o 
-	g++ -g main.o cublasRBM.o cudaMem.o kernels.o kernel1.o kernel2.o -o cuRBM -L/home/yzhu7/.local/cuda-5.0/lib64 -lcuda -lcudart -lcudadevrt -lcublas
+	g++ -g main.o cublasRBM.o cudaMem.o kernels.o kernel1.o kernel2.o -o cuRBM -L/home/yzhu7/.local/cuda-5.0/lib64 -lcuda -lcudart -lcudadevrt -lcublas -lcurand
 
 main.o: cuRBM.cpp
 	g++ -g -c cuRBM.cpp -o main.o
