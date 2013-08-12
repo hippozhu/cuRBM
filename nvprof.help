@@ -1,0 +1,76 @@
+Usage: nvprof [options] [CUDA-application] [application-arguments]
+Options:
+  -o,  --output-profile <filename>
+                            Output the result file which can be imported later
+                            or opened by the NVIDIA Visual Profiler.
+
+  -i,  --import-profile <filename>
+                            Import a result profile from a previous run.
+
+  -s,  --print-summary      Print a summary of the profiling result on screen.
+                            NOTE: This is the default unless '--output-profile'
+                            or the print trace options are used.
+
+       --print-gpu-trace    Print individual kernel invocations (including CUDA
+                            memcpy/memset kernels) and sort them in
+                            chronological order.
+
+       --print-api-trace    Print CUDA runtime/driver API trace.
+
+       --csv                Use comma-separated values in the output.
+
+  -u,  --normalized-time-unit <s|ms|us|ns|col|auto>
+                            Specify the unit of time that will be used in the
+                            output.
+                            Allowed values:
+                                s - second, ms - millisecond, us - microsecond,
+                                ns - nanosecond
+                                col - a fixed unit for each column
+                                auto (default) - nvprof chooses the scale for
+                                each time value based on its length
+
+  -t,  --timeout <seconds>  Set an execution timeout (in seconds) for the
+                            application.
+
+  -n,  --no-demangling      Turn off the default C++ name demangling.
+
+       --events <event names>
+                            Specify the events to be profiled on certain
+                            device(s). Multiple event names separated by comma
+                            can be specified. Which device(s) are profiled is
+                            controlled by the '--devices' option. Otherwise
+                            events will be collected on all devices.
+                            For a list of available events, use
+                            '--query-events'.
+
+       --devices <device ids>
+                            This option changes the scope of subsequent
+                            '--events' options.
+                            Allowed values:
+                                all - change scope to all valid devices
+                                comma-separated device IDs - change scope to
+                                specified devices
+
+       --query-events       List all the events available on each device.
+
+       --concurrent-kernels-off
+                            Turn off the default concurrent kernel execution.
+                            All kernel launches on the same device will be
+                            serialized.
+
+       --profile-from-start-off
+                            Disable profiling at the start of the application.
+                            The application is responsible to turn on/off
+                            profiling using cu/cudaProfileStart/Stop.
+
+       --aggregate-mode-off
+                            Turn off the aggregate mode when profiling events.
+                            Event counters will be collected for each domain
+                            instance, instead of the whole device.
+
+       --quiet              Suppress all output except the summary.
+
+  -V   --version            Print version information of this tool.
+
+  -h,  --help               Print this help information.
+
